@@ -1,0 +1,4 @@
+format:
+  keywords: preserve      # preserve | upper | lower
+  operator_spacing: true  # normalize spaces around binary operators and after commas
+  indent_width: 2         # indentation width; 0 or omit to disable

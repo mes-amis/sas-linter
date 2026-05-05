@@ -241,6 +241,26 @@ class SasLinter
     findings
   end
 
+  # Apply formatting to a file in-place. Runs the formatter's own
+  # transformations first, then all autofix-capable rules in this linter's
+  # rule set — regardless of each rule's per-instance `autofix?` flag, so
+  # `--format` is more thorough than ordinary per-rule autofix.
+  #
+  # Returns true if the file was rewritten, false if nothing changed.
+  def format_file(path, formatter:)
+    original = read_source(path)
+    modified = formatter.format(original)
+    @rules.each do |rule|
+      next unless rule.class.supports_autofix?
+
+      modified = rule.autofix(modified)
+    end
+    return false if modified.b == original.b
+
+    File.write(path, modified)
+    true
+  end
+
   private
 
   def read_source(path)
@@ -273,6 +293,7 @@ class SasLinter
   end
 end
 
+require_relative "sas_linter/formatter"
 require_relative "sas_linter/rules/unreachable_inner_branch_value"
 require_relative "sas_linter/rules/identical_if_else_branches"
 require_relative "sas_linter/rules/commented_out_guard"
