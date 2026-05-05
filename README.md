@@ -37,6 +37,71 @@ bin/sas_lint --no-autofix src/*.sas
 
 Exit codes: `0` clean, `1` findings, `2` invalid args.
 
+## YAML config
+
+Every rule with options, plus its defaults. Rules omitted from the config default to enabled with no options, so adding a new rule to the gem won't silently disable it for users with existing configs. To suppress a rule, list it with `enabled: false`.
+
+```yaml
+rules:
+  # ── Structural / semantic rules ─────────────────────────────────────
+  unreachable_inner_branch_value:
+    enabled: true              # default for every rule
+
+  identical_if_else_branches:
+    enabled: true
+
+  malformed_if_condition:
+    enabled: true
+
+  commented_out_guard:
+    enabled: true
+
+  choose_one_template:
+    enabled: true
+
+  missing_assignment_semicolon:
+    enabled: true
+    autofix: false             # rule supports autofix; off by default
+
+  variable_value_out_of_known_range:
+    enabled: true
+    csv_paths:                          # empty list = rule is a no-op
+      - metadata/variables.csv
+      - metadata/variables-extra.csv
+    name_column: "Variable"             # default
+    values_column: "Acceptable Values"  # default
+    name_match: case_insensitive        # case_insensitive | exact
+    delimiter: ","                      # CSV column separator: "," | ";" | "\t"
+
+  # ── Source-hygiene rules (all support autofix) ──────────────────────
+  trailing_whitespace:
+    enabled: true
+    autofix: false
+
+  tab_expansion:
+    enabled: true
+    autofix: false
+    width: 8                   # tab stop width
+
+  source_headers:
+    enabled: true
+    autofix: false             # rewrap **…**; 90-char header rows when true
+
+  line_endings:
+    enabled: true
+    autofix: false             # collapse \r\r\n → \r\n; lone \r → dominant ending
+
+  encoding_issues:
+    enabled: true
+    autofix: false
+    use_defaults: false        # apply built-in smart-quote / em-dash / Win-1252 map
+    replacements:              # project-specific byte→ASCII rewrites (run BEFORE defaults)
+      "—": "--"
+      "\x85": "Ö"
+```
+
+`enabled` and `autofix` are accepted on every rule. Options not listed above are ignored.
+
 ## Library usage
 
 ```ruby
@@ -98,26 +163,6 @@ end
 Subclasses self-register on the rule registry via `rule_id` — once required, they're picked up by `SasLinter.new` (no rule list) and resolvable via `SasLinter::Rule.fetch(:my_rule)`.
 
 To support autofix, override `self.supports_autofix?` to return `true` and implement `#autofix(source)` to return the rewritten source.
-
-## YAML config
-
-```yaml
-rules:
-  malformed_if_condition:
-    enabled: true              # default
-  trailing_whitespace:
-    enabled: true
-    autofix: true
-  encoding_issues:
-    enabled: true
-    use_defaults: true
-    replacements:
-      "—": "--"
-  identical_if_else_branches:
-    enabled: false             # disable a rule
-```
-
-Rules omitted from the config default to enabled with no options, so adding a new rule to the gem won't silently disable it for users with existing configs.
 
 ## Testing
 
