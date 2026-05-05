@@ -694,6 +694,52 @@ RSpec.describe SasLinter do
     end
   end
 
+  describe "format_file" do
+    it "applies formatter transformations regardless of rule autofix settings" do
+      Tempfile.create(["fmt", ".sas"]) do |f|
+        f.write("data foo;\nx=1;\nrun;\n")
+        f.flush
+        formatter = SasLinter::Formatter.new(operator_spacing: true)
+        linter = described_class.new  # all rules with autofix: false (default)
+        linter.format_file(f.path, formatter: formatter)
+        expect(File.read(f.path)).to eq("data foo;\nx = 1;\nrun;\n")
+      end
+    end
+
+    it "does not apply a rule's autofix when autofix: false" do
+      Tempfile.create(["fmt_no_autofix", ".sas"]) do |f|
+        f.write("data foo;   \nrun;\n")
+        f.flush
+        formatter = SasLinter::Formatter.new
+        rule = SasLinter::Rules::TrailingWhitespace.new(autofix: false)
+        described_class.new(rules: [rule]).format_file(f.path, formatter: formatter)
+        expect(File.read(f.path)).to eq("data foo;   \nrun;\n")
+      end
+    end
+
+    it "applies a rule's autofix when autofix: true" do
+      Tempfile.create(["fmt_autofix", ".sas"]) do |f|
+        f.write("data foo;   \nrun;\n")
+        f.flush
+        formatter = SasLinter::Formatter.new
+        rule = SasLinter::Rules::TrailingWhitespace.new(autofix: true)
+        described_class.new(rules: [rule]).format_file(f.path, formatter: formatter)
+        expect(File.read(f.path)).to eq("data foo;\nrun;\n")
+      end
+    end
+
+    it "runs formatter and opted-in rule autofixes together" do
+      Tempfile.create(["fmt_both", ".sas"]) do |f|
+        f.write("data foo;   \nx=1;\nrun;\n")
+        f.flush
+        formatter = SasLinter::Formatter.new(operator_spacing: true)
+        rule = SasLinter::Rules::TrailingWhitespace.new(autofix: true)
+        described_class.new(rules: [rule]).format_file(f.path, formatter: formatter)
+        expect(File.read(f.path)).to eq("data foo;\nx = 1;\nrun;\n")
+      end
+    end
+  end
+
   describe "Finding#to_s" do
     it "formats as path:line:column: [rule] message" do
       f = SasLinter::Finding.new(

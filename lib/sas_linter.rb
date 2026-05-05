@@ -241,6 +241,28 @@ class SasLinter
     findings
   end
 
+  # Apply formatting to a file in-place. Runs the formatter's own
+  # transformations first, then the autofix pipeline for rules that have
+  # `autofix: true` in config — identical to lint_with_fixes except that the
+  # formatter pass runs first. Rules that haven't been opted in to autofix
+  # (e.g. missing_assignment_semicolon without explicit `autofix: true`) are
+  # left alone so that --format stays cosmetic by default.
+  #
+  # Returns true if the file was rewritten, false if nothing changed.
+  def format_file(path, formatter:)
+    original = read_source(path)
+    modified = formatter.format(original)
+    @rules.each do |rule|
+      next unless rule.autofix? && rule.class.supports_autofix?
+
+      modified = rule.autofix(modified)
+    end
+    return false if modified.b == original.b
+
+    File.write(path, modified)
+    true
+  end
+
   private
 
   def read_source(path)
@@ -273,6 +295,7 @@ class SasLinter
   end
 end
 
+require_relative "sas_linter/formatter"
 require_relative "sas_linter/rules/unreachable_inner_branch_value"
 require_relative "sas_linter/rules/identical_if_else_branches"
 require_relative "sas_linter/rules/commented_out_guard"
