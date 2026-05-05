@@ -1,0 +1,94 @@
+name: Publish Gem to RubyGems
+
+# On push to main, build the gem and push it to RubyGems.org via OIDC
+# trusted publishing. Requires a Trusted Publisher entry on rubygems.org
+# (Profile → Trusted Publishers) for this repo + workflow + gem name.
+# The job is idempotent: if the version is already tagged on origin or
+# RubyGems rejects the push as a duplicate, it exits cleanly.
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # create the v<version> tag + GitHub release
+      id-token: write   # OIDC token for RubyGems trusted publishing
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "4.0"
+          bundler-cache: false
+
+      - name: Extract version
+        id: version
+        run: |
+          VERSION=$(ruby -r./lib/sas_linter/version.rb -e "puts SasLinter::VERSION")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Gemspec reports version $VERSION"
+
+      - name: Check if tag already exists
+        id: check_tag
+        run: |
+          if git ls-remote --tags origin | grep -q "refs/tags/v${{ steps.version.outputs.version }}$"; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "v${{ steps.version.outputs.version }} is already tagged on origin — nothing to do."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build gem
+        if: steps.check_tag.outputs.exists == 'false'
+        run: |
+          gem build sas-linter.gemspec
+          ls -1 sas-linter-*.gem
+
+      - name: Configure RubyGems credentials (OIDC trusted publishing)
+        if: steps.check_tag.outputs.exists == 'false'
+        uses: rubygems/configure-rubygems-credentials@v1.0.0
+
+      - name: Publish gem
+        if: steps.check_tag.outputs.exists == 'false'
+        id: push
+        run: |
+          set +e
+          GEM_FILE="sas-linter-${{ steps.version.outputs.version }}.gem"
+          OUTPUT=$(gem push "$GEM_FILE" 2>&1)
+          STATUS=$?
+          echo "$OUTPUT"
+          if [ "$STATUS" -ne 0 ]; then
+            if echo "$OUTPUT" | grep -q "has already been pushed"; then
+              echo "Version already published — treating as NOOP."
+              echo "already_published=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            exit "$STATUS"
+          fi
+          echo "already_published=false" >> "$GITHUB_OUTPUT"
+
+      - name: Create git tag
+        if: steps.check_tag.outputs.exists == 'false' && steps.push.outputs.already_published != 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "v${{ steps.version.outputs.version }}" -m "Release v${{ steps.version.outputs.version }}"
+          git push origin "v${{ steps.version.outputs.version }}"
+
+      - name: Create GitHub release
+        if: steps.check_tag.outputs.exists == 'false' && steps.push.outputs.already_published != 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Release v${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

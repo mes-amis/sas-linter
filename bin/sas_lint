@@ -1,0 +1,79 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "sas_linter"
+require "optparse"
+
+options = { config: SasLinter::DEFAULT_CONFIG_PATH, rules: nil, autofix: true }
+parser = OptionParser.new do |opts|
+  opts.banner = "Usage: sas_lint FILE [FILE ...] [options]"
+
+  opts.on("--config PATH", "YAML config file (default: #{SasLinter::DEFAULT_CONFIG_PATH}). " \
+                            "Missing file → run with built-in defaults.") do |path|
+    options[:config] = path
+  end
+
+  opts.on("--rules id1,id2,...", Array,
+          "Override config and run only the listed rules with default options.") do |ids|
+    options[:rules] = ids.map(&:to_sym)
+  end
+
+  opts.on("--no-autofix",
+          "Suppress autofix even if the config sets `autofix: true` for some rule. " \
+          "Findings are still reported but no file is rewritten.") do
+    options[:autofix] = false
+  end
+
+  opts.on("--list-rules", "Print every registered rule and exit") do
+    SasLinter::Rule.all.each do |klass|
+      mark = klass.supports_autofix? ? "  [autofix]" : ""
+      puts format("%-40s  %s%s", klass.rule_id, klass.description, mark)
+    end
+    exit 0
+  end
+
+  opts.on("-h", "--help", "Show this help message") do
+    puts opts
+    exit 0
+  end
+end
+
+parser.parse!
+
+if ARGV.empty?
+  warn parser.help
+  exit 2
+end
+
+linter =
+  if options[:rules]
+    SasLinter.new(rules: options[:rules])
+  else
+    config = SasLinter.load_config_file(options[:config])
+    # `--no-autofix` strips every rule's autofix flag from the loaded config
+    # before the linter is built, so a dry run can never rewrite a file.
+    if options[:autofix] == false && config.is_a?(Hash) && config["rules"].is_a?(Hash)
+      config["rules"].each_value do |opts_hash|
+        opts_hash["autofix"] = false if opts_hash.is_a?(Hash) && opts_hash["autofix"]
+      end
+    end
+    SasLinter.from_config(config)
+  end
+
+exit_code = 0
+
+ARGV.each do |path|
+  unless File.file?(path)
+    warn "sas_lint: #{path}: not a regular file"
+    exit_code = 2
+    next
+  end
+
+  findings = linter.lint_file(path)
+  next if findings.empty?
+
+  exit_code = 1
+  findings.each { |f| puts f.to_s }
+end
+
+exit exit_code
