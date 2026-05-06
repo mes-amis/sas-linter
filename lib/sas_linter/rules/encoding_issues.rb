@@ -286,8 +286,13 @@ class SasLinter
         findings
       end
 
+      # `seq` is ASCII-8BIT (from `pack("C*")`); `encode("UTF-8")` on a
+      # binary string replaces every byte ≥ 0x80 with U+FFFD before
+      # `codepoints` runs. The bytes are already a valid UTF-8 sequence
+      # by construction (caller checked `utf8_sequence_length`), so
+      # reinterpret rather than transcode.
       def codepoint(seq)
-        seq.encode("UTF-8", invalid: :replace, undef: :replace).codepoints.first
+        seq.dup.force_encoding("UTF-8").codepoints.first
       end
 
       # Returns the length (1-4) of a valid UTF-8 sequence starting
