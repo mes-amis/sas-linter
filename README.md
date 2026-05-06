@@ -1,6 +1,6 @@
 # sas-linter
 
-A configurable lint engine for SAS source files. Built on the [`sas-lexer`](https://github.com/mes-amis/sas-lexer-rb) gem (a Ruby FFI binding to Misha Perlov's Rust [`sas-lexer`](https://github.com/mishamsk/sas-lexer)) and ships with eleven pluggable rules covering structural defects, cosmetic issues, and source-header conventions.
+A configurable lint engine for SAS source files. Built on the [`sas-lexer`](https://github.com/mes-amis/sas-lexer-rb) gem (a Ruby FFI binding to Misha Perlov's Rust [`sas-lexer`](https://github.com/mishamsk/sas-lexer)) and ships with thirteen pluggable rules covering structural defects, cosmetic issues, and source-header conventions.
 
 ## Installation
 
@@ -62,6 +62,10 @@ rules:
   missing_assignment_semicolon:
     enabled: true
     autofix: false             # rule supports autofix; off by default
+
+  inconsistent_variable_case:
+    enabled: true
+    autofix: false             # rewrite every minority casing to the most-common form
 
   variable_value_out_of_known_range:
     enabled: true
@@ -135,6 +139,7 @@ findings = linter.lint_file("path/to/source.sas")
 | `malformed_if_condition` | Empty conditions, missing operators, orphan `then`, unbalanced parens, etc. |
 | `missing_assignment_semicolon` | Assignment statements followed by an inline `**` comment but no terminating `;`. |
 | `variable_value_out_of_known_range` | `if VAR = N` / `if VAR in (...)` literals fall outside the variable's documented acceptable values. Loads the catalog from one or more CSVs with configurable column names and column separator (`,`, `;`, tab). |
+| `inconsistent_variable_case` | Identifier appears with more than one casing in the same file (`myVar` vs `MyVar`). SAS treats both as the same variable; autofix rewrites every minority spelling to the most-common form. Skips proc-format definitions and `format.` / `lib.member` references. |
 
 `bin/sas_lint --list-rules` prints the same set with autofix capability.
 
