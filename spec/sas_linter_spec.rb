@@ -712,6 +712,71 @@ RSpec.describe SasLinter do
     end
   end
 
+  describe "inconsistent variable case" do
+    let(:findings) do
+      described_class.new(rules: [:inconsistent_variable_case])
+                     .lint_file(lint_fixture("inconsistent_variable_case"))
+    end
+
+    it "flags the minority spelling and tells the user the canonical form to use" do
+      expect(findings.length).to eq(1)
+      expect(findings[0].rule).to eq(:inconsistent_variable_case)
+      expect(findings[0].line).to eq(7)
+      expect(findings[0].column).to eq(23)
+      expect(findings[0].message).to include("`MyFlag`")
+      expect(findings[0].message).to include("`myFlag`")
+    end
+
+    it "does not flag the format-name occurrence in `proc format value <name>` " \
+       "or the format reference `<name>.` — those legitimately share a name " \
+       "with the variable" do
+      # The fixture has `value myFlag` and `format ... myFlag.` in addition
+      # to the variable uses; if those got bucketed with the variables we'd
+      # see more than one finding.
+      expect(findings.map(&:line)).to eq([7])
+    end
+
+    it "produces no findings when every use shares one casing" do
+      clean = described_class.new(rules: [:inconsistent_variable_case])
+                             .lint_file(clean_fixture("inconsistent_variable_case"))
+      expect(clean).to be_empty
+    end
+
+    it "autofix rewrites every minority spelling to the most-common form" do
+      Tempfile.create(["ivc_fix", ".sas"]) do |f|
+        f.write(File.read(lint_fixture("inconsistent_variable_case")))
+        f.flush
+        rule = SasLinter::Rules::InconsistentVariableCase.new(autofix: true)
+        described_class.new(rules: [rule]).lint_file(f.path)
+        expect(File.read(f.path)).to eq(File.read(clean_fixture("inconsistent_variable_case")))
+      end
+    end
+
+    it "leaves the file untouched when autofix is off" do
+      Tempfile.create(["ivc_dry", ".sas"]) do |f|
+        f.write(File.read(lint_fixture("inconsistent_variable_case")))
+        f.flush
+        before = File.read(f.path)
+        described_class.new(rules: [:inconsistent_variable_case]).lint_file(f.path)
+        expect(File.read(f.path)).to eq(before)
+      end
+    end
+
+    it "picks the most-common spelling as canonical, not the first-seen one" do
+      # Two `LOWER` uses, three `lower` uses — `lower` wins on count even
+      # though `LOWER` appears first.
+      Tempfile.create(["ivc_majority", ".sas"]) do |f|
+        f.write("data x;\n  LOWER = 1; LOWER = 2;\n  lower = 3; lower = 4; lower = 5;\nrun;\n")
+        f.flush
+        rule = SasLinter::Rules::InconsistentVariableCase.new(autofix: true)
+        described_class.new(rules: [rule]).lint_file(f.path)
+        expect(File.read(f.path)).to eq(
+          "data x;\n  lower = 1; lower = 2;\n  lower = 3; lower = 4; lower = 5;\nrun;\n"
+        )
+      end
+    end
+  end
+
   describe "format_file" do
     it "applies formatter transformations regardless of rule autofix settings" do
       Tempfile.create(["fmt", ".sas"]) do |f|
