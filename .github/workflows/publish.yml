@@ -82,12 +82,29 @@ jobs:
           git tag -a "v${{ steps.version.outputs.version }}" -m "Release v${{ steps.version.outputs.version }}"
           git push origin "v${{ steps.version.outputs.version }}"
 
+      - name: Generate release notes
+        if: steps.check_tag.outputs.exists == 'false' && steps.push.outputs.already_published != 'true'
+        id: notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          prev_tag=$(gh release list --limit 1 --json tagName --jq '.[0].tagName // ""')
+          notes_file="${RUNNER_TEMP}/release-notes.md"
+          if [ -z "$prev_tag" ]; then
+            .github/scripts/release_notes --initial "${{ github.sha }}" > "$notes_file"
+          else
+            .github/scripts/release_notes "$prev_tag" "${{ github.sha }}" > "$notes_file"
+          fi
+          cat "$notes_file"
+          echo "notes-file=$notes_file" >> "$GITHUB_OUTPUT"
+
       - name: Create GitHub release
         if: steps.check_tag.outputs.exists == 'false' && steps.push.outputs.already_published != 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version.outputs.version }}
           name: Release v${{ steps.version.outputs.version }}
+          body_path: ${{ steps.notes.outputs.notes-file }}
           draft: false
           prerelease: false
         env:

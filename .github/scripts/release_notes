@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Emit Markdown release notes: a commit list with author attribution and
+# a "Full Changelog" compare link, in the same shape GitHub's auto-generated
+# release notes use.
+#
+# Usage:
+#   .github/scripts/release_notes <prev_ref> <head_ref>
+#   .github/scripts/release_notes --initial <head_ref>
+#
+# Requires `gh` (authenticated) for the compare API call. The repo slug is
+# read from $GITHUB_REPOSITORY, falling back to the `origin` remote URL.
+# Output goes to stdout.
+
+set -euo pipefail
+
+if [[ $# -ne 2 ]]; then
+  echo "usage: $0 <prev_ref|--initial> <head_ref>" >&2
+  exit 64
+fi
+
+prev=$1
+head=$2
+
+repo=${GITHUB_REPOSITORY:-}
+if [[ -z "$repo" ]]; then
+  origin=$(git remote get-url origin)
+  repo=$(printf '%s\n' "$origin" \
+    | sed -E 's|^git@github\.com:||; s|^https://github\.com/||; s|\.git$||')
+fi
+server=${GITHUB_SERVER_URL:-https://github.com}
+base="$server/$repo"
+
+if [[ "$prev" == "--initial" ]]; then
+  echo "## Initial release"
+  exit 0
+fi
+
+echo "## What's Changed"
+echo
+
+# The compare endpoint returns commits oldest→newest with both .commit.author
+# (raw git author) and .author (linked GitHub user, null if no match).
+gh api "repos/$repo/compare/$prev...$head" \
+  --jq '.commits[] |
+        "* \(.commit.message | split("\n")[0]) by @\(.author.login // .commit.author.name) in [`\(.sha[0:7])`](\(.html_url))"'
+
+echo
+echo "**Full Changelog**: $base/compare/$prev...$head"
