@@ -465,6 +465,24 @@ RSpec.describe SasLinter do
       end
     end
 
+    # Regression: codepoint() used to call String#encode("UTF-8") on the
+    # ASCII-8BIT bytes from `pack("C*")`, which replaces every non-ASCII
+    # byte with U+FFFD before the codepoint is read. Every multibyte
+    # finding therefore reported `U+FFFD` regardless of what was matched.
+    it "reports the actual codepoint of the matched UTF-8 sequence in the message" do
+      Tempfile.create(["enc_msg", ".sas"]) do |f|
+        f.binmode
+        f.write("Hello\xE2\x80\x99world\xE2\x80\x93end\n") # U+2019 + U+2013
+        f.flush
+        rule = SasLinter::Rules::EncodingIssues.new(use_defaults: true, autofix: true)
+        findings = described_class.new(rules: [rule]).lint_file(f.path).select { |fd| fd.rule == :encoding_issues }
+        messages = findings.map(&:message)
+        expect(messages).to include(a_string_including("U+2019"))
+        expect(messages).to include(a_string_including("U+2013"))
+        expect(messages).not_to include(a_string_including("U+FFFD"))
+      end
+    end
+
     it "rewrites smart punctuation to ASCII when use_defaults + autofix are on" do
       Tempfile.create(["enc_fix", ".sas"]) do |f|
         f.binmode
