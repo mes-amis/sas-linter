@@ -799,6 +799,73 @@ RSpec.describe SasLinter do
     end
   end
 
+  describe "format for unknown variable" do
+    let(:findings) do
+      described_class.new(rules: [:format_for_unknown_variable])
+                     .lint_file(lint_fixture("format_for_unknown_variable"))
+    end
+
+    it "flags an `attrib var format=fmt.;` whose variable is not referenced anywhere else" do
+      expect(findings.length).to eq(1)
+      expect(findings[0].rule).to eq(:format_for_unknown_variable)
+      expect(findings[0].line).to eq(10)
+      expect(findings[0].column).to eq(11)
+      expect(findings[0].message).to include("`totalscore`")
+      expect(findings[0].message).to include("attrib")
+      expect(findings[0].message).to include("not referenced anywhere else")
+    end
+
+    it "produces no findings when every formatted variable is referenced elsewhere" do
+      clean = described_class.new(rules: [:format_for_unknown_variable])
+                             .lint_file(clean_fixture("format_for_unknown_variable"))
+      expect(clean).to be_empty
+    end
+
+    it "flags a standalone `format <var> <fmt>.;` when the var is unknown" do
+      out = described_class.new(rules: [:format_for_unknown_variable])
+                           .lint_file(File.join(lints_path, "format_for_unknown_variable", "standalone_format.sas"))
+      expect(out.length).to eq(1)
+      expect(out[0].line).to eq(3)
+      expect(out[0].message).to include("`totalscore`")
+      expect(out[0].message).to include("format")
+    end
+
+    it "flags every unknown variable in a multi-target format statement" do
+      out = described_class.new(rules: [:format_for_unknown_variable])
+                           .lint_file(File.join(lints_path, "format_for_unknown_variable", "multi_target.sas"))
+      # message format: "`format` assigns a format to `<var>` ..."
+      flagged = out.map { |x| x.message[/to `(\w+)`/, 1] }
+      expect(flagged).to contain_exactly("phantom1", "phantom2")
+    end
+
+    it "skips the file entirely when a `set` statement pulls in unknown columns" do
+      path = File.join(lints_path, "format_for_unknown_variable", "external_input_skipped.sas")
+      out = described_class.new(rules: [:format_for_unknown_variable]).lint_file(path)
+      expect(out).to be_empty
+    end
+
+    it "does not count `proc format` `value <name>` as a variable use" do
+      # `value flagx` defines a format named flagx — `flagx` is not a
+      # variable reference, so a lone `attrib v format=flagx.;` should
+      # still flag `v`, not be silenced by the format definition's name.
+      out = described_class.new(rules: [:format_for_unknown_variable])
+                           .lint_file(File.join(lints_path, "format_for_unknown_variable", "proc_format_value.sas"))
+      expect(out.length).to eq(1)
+      expect(out[0].message).to include("`v`")
+    end
+
+    it "does not flag a variable that is only declared in `keep` / `retain`" do
+      # `keep` and `retain` name variables that *are* used elsewhere in
+      # real code; they shouldn't be the sole evidence of use, but for
+      # this rule they're already excluded from the use index — what
+      # matters is that adding them doesn't produce a finding for the
+      # var that *is* assigned.
+      out = described_class.new(rules: [:format_for_unknown_variable])
+                           .lint_file(File.join(lints_path, "format_for_unknown_variable", "keep_retain.sas"))
+      expect(out).to be_empty
+    end
+  end
+
   describe "format_file" do
     it "applies formatter transformations regardless of rule autofix settings" do
       Tempfile.create(["fmt", ".sas"]) do |f|
