@@ -1,6 +1,6 @@
 # sas-linter
 
-A configurable lint engine for SAS source files. Built on the [`sas-lexer`](https://github.com/mes-amis/sas-lexer-rb) gem (a Ruby FFI binding to Misha Perlov's Rust [`sas-lexer`](https://github.com/mishamsk/sas-lexer)) and ships with fourteen pluggable rules covering structural defects, cosmetic issues, and source-header conventions.
+A configurable lint engine for SAS source files. Built on the [`sas-lexer`](https://github.com/mes-amis/sas-lexer-rb) gem (a Ruby FFI binding to Misha Perlov's Rust [`sas-lexer`](https://github.com/mishamsk/sas-lexer)) and ships with fifteen pluggable rules covering structural defects, cosmetic issues, and source-header conventions.
 
 ## Installation
 
@@ -62,6 +62,10 @@ rules:
   missing_assignment_semicolon:
     enabled: true
     autofix: false             # rule supports autofix; off by default
+
+  unterminated_comment:
+    enabled: true
+    autofix: false             # append `;` to `**…**` lines whose missing terminator eats the next line
 
   inconsistent_variable_case:
     enabled: true
@@ -141,6 +145,7 @@ findings = linter.lint_file("path/to/source.sas")
 | `encoding_issues` | Smart-quote / em-dash / Win-1252 byte sequences that confuse downstream tooling. |
 | `malformed_if_condition` | Empty conditions, missing operators, orphan `then`, unbalanced parens, etc. |
 | `missing_assignment_semicolon` | Assignment statements followed by an inline `**` comment but no terminating `;`. |
+| `unterminated_comment` | A standalone `** … **` comment whose missing `;` lets the SAS lexer extend the comment into the next line of real code, silently swallowing it. Autofix appends the `;`. |
 | `variable_value_out_of_known_range` | `if VAR = N` / `if VAR in (...)` literals fall outside the variable's documented acceptable values. Loads the catalog from one or more CSVs with configurable column names and column separator (`,`, `;`, tab). |
 | `inconsistent_variable_case` | Identifier appears with more than one casing in the same file (`myVar` vs `MyVar`). SAS treats both as the same variable; autofix rewrites every minority spelling to the most-common form. Skips proc-format definitions and `format.` / `lib.member` references. |
 | `format_for_unknown_variable` | `format` / `informat` / `attrib` statement assigns a format to a variable that's referenced nowhere else in the file — almost always a typo. Skipped on files that pull in columns via `set` / `merge` / `update` / `infile` / `input`. |
