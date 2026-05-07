@@ -762,6 +762,28 @@ RSpec.describe SasLinter do
       end
     end
 
+    it "autofix stays correct when the source arrives as ASCII-8BIT " \
+       "(e.g. after EncodingIssues#autofix) with multi-byte chars upstream" do
+      # Regression: the IVC autofix used to slice the source with
+      # character-based `String#[]=` while the lexer reports character
+      # offsets. That's fine when the source is UTF-8 — but
+      # EncodingIssues#autofix returns ASCII-8BIT, on which `[]=` is
+      # byte-indexed. Any multi-byte UTF-8 sequence earlier in the
+      # file then shifted every replacement by the byte/char gap and
+      # corrupted the output (the smart-punctuation glyphs in the
+      # fixture comment are enough to trigger it).
+      Tempfile.create(["ivc_chained", ".sas"]) do |f|
+        f.binmode
+        f.write(File.binread(lint_fixture("inconsistent_variable_case_after_binary_autofix")))
+        f.flush
+        enc = SasLinter::Rules::EncodingIssues.new(use_defaults: true, autofix: true)
+        ivc = SasLinter::Rules::InconsistentVariableCase.new(autofix: true)
+        described_class.new(rules: [enc, ivc]).lint_file(f.path)
+        expect(File.binread(f.path))
+          .to eq(File.binread(clean_fixture("inconsistent_variable_case_after_binary_autofix")))
+      end
+    end
+
     it "picks the most-common spelling as canonical, not the first-seen one" do
       # Two `LOWER` uses, three `lower` uses — `lower` wins on count even
       # though `LOWER` appears first.

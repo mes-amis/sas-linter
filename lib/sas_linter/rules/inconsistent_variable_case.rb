@@ -61,9 +61,19 @@ class SasLinter
       def autofix(source)
         return source if source.nil? || source.empty?
 
+        # If a previous rule's autofix returned ASCII-8BIT (e.g.
+        # EncodingIssues#autofix walks bytes and returns binary), tag
+        # it UTF-8 before slicing. The lexer treats the bytes as UTF-8
+        # and reports character offsets either way; only Ruby's
+        # `String#[]=` cares about the encoding label, and it indexes
+        # by bytes for ASCII-8BIT but by characters for UTF-8 — so a
+        # binary tag plus any multi-byte sequence earlier in the file
+        # would shift every replacement by the byte/char gap.
+        src = source.encoding == Encoding::UTF_8 ? source : source.dup.force_encoding("UTF-8")
+
         lexer = SasLexer::Lexer.new
         begin
-          all_tokens = lexer.tokenize(source)
+          all_tokens = lexer.tokenize(src)
         ensure
           lexer.free
         end
@@ -78,7 +88,7 @@ class SasLinter
         end
 
         # Apply right-to-left so earlier offsets stay valid.
-        out = source.dup
+        out = src.dup
         edits.sort_by! { |start, _, _| -start }
         edits.each { |start, finish, repl| out[start...finish] = repl }
         out
