@@ -32,6 +32,11 @@ RSpec.describe SasLinter do
         .to eq(SasLinter::Rules::MissingAssignmentSemicolon)
     end
 
+    it "registers UnterminatedComment under :unterminated_comment" do
+      expect(SasLinter::Rule.fetch(:unterminated_comment))
+        .to eq(SasLinter::Rules::UnterminatedComment)
+    end
+
     it "raises ArgumentError for an unknown rule id" do
       expect { SasLinter::Rule.fetch(:does_not_exist) }
         .to raise_error(ArgumentError, /Unknown lint rule/)
@@ -152,6 +157,74 @@ RSpec.describe SasLinter do
         out = File.read(f.path)
         expect(out).to include("   B1 = B1;    **  Comatose;\n")
         expect(out).to include("   X  = X; **  Estimated Survival;\n")
+      end
+    end
+  end
+
+  describe "unterminated comment" do
+    let(:findings) do
+      described_class.new(rules: [:unterminated_comment])
+                     .lint_file(lint_fixture("unterminated_comment"))
+    end
+
+    it "flags every `** ... **` line whose missing `;` causes the comment to consume the next line of code" do
+      expect(findings.map(&:rule).uniq).to eq([:unterminated_comment])
+      expect(findings.length).to eq(2)
+      expect(findings.map(&:line)).to eq([4, 6])
+      expect(findings[0].column).to eq(4)
+      expect(findings[0].message).to include("missing `;`")
+      expect(findings[0].message).to include("consumes")
+    end
+
+    it "produces no findings for closed `**...**;` comments or legitimate multi-line `*...;` prose" do
+      clean = described_class.new(rules: [:unterminated_comment])
+                             .lint_file(clean_fixture("unterminated_comment"))
+      expect(clean).to be_empty
+    end
+
+    it "autofix appends `;` to each unterminated `**...**` line, leaving the rest of the file alone" do
+      Tempfile.create(["uc_fix", ".sas"]) do |f|
+        f.write(File.read(lint_fixture("unterminated_comment")))
+        f.flush
+        rule = SasLinter::Rules::UnterminatedComment.new(autofix: true)
+        described_class.new(rules: [rule]).lint_file(f.path)
+        out = File.read(f.path)
+        expect(out).to include("   ** SOME COMMENT **;\n")
+        expect(out).to include("   ** ANOTHER NOTE **;\n")
+        # The previously-consumed code lines must survive intact.
+        expect(out).to include("   y = x + 1;\n")
+        expect(out).to include("   z = y * 2;\n")
+      end
+    end
+
+    it "leaves the file untouched when autofix is off" do
+      Tempfile.create(["uc_dry", ".sas"]) do |f|
+        f.write(File.read(lint_fixture("unterminated_comment")))
+        f.flush
+        before = File.read(f.path)
+        described_class.new(rules: [:unterminated_comment]).lint_file(f.path)
+        expect(File.read(f.path)).to eq(before)
+      end
+    end
+
+    it "after autofix the comment no longer consumes following code (re-lex confirms)" do
+      Tempfile.create(["uc_relex", ".sas"]) do |f|
+        f.write(File.read(lint_fixture("unterminated_comment")))
+        f.flush
+        rule = SasLinter::Rules::UnterminatedComment.new(autofix: true)
+        described_class.new(rules: [rule]).lint_file(f.path)
+
+        lexer = SasLexer::Lexer.new
+        begin
+          tokens = lexer.tokenize(File.read(f.path))
+        ensure
+          lexer.free
+        end
+        # No comment token should span more than one source line now.
+        spanning = tokens.select do |t|
+          t[:channel] == SasLexer::Lexer::TokenChannel::COMMENT && t[:start_line] != t[:end_line]
+        end
+        expect(spanning).to be_empty
       end
     end
   end
