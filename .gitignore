@@ -14,3 +14,4 @@ Gemfile.lock
 
 *.gem
 /examples
+.claude/settings.local.json
