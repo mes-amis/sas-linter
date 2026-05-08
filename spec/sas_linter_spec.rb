@@ -32,6 +32,11 @@ RSpec.describe SasLinter do
         .to eq(SasLinter::Rules::MissingAssignmentSemicolon)
     end
 
+    it "registers MalformedLabelStatement under :malformed_label_statement" do
+      expect(SasLinter::Rule.fetch(:malformed_label_statement))
+        .to eq(SasLinter::Rules::MalformedLabelStatement)
+    end
+
     it "registers UnterminatedComment under :unterminated_comment" do
       expect(SasLinter::Rule.fetch(:unterminated_comment))
         .to eq(SasLinter::Rules::UnterminatedComment)
@@ -157,6 +162,41 @@ RSpec.describe SasLinter do
         out = File.read(f.path)
         expect(out).to include("   B1 = B1;    **  Comatose;\n")
         expect(out).to include("   X  = X; **  Estimated Survival;\n")
+      end
+    end
+  end
+
+  describe "malformed label statement" do
+    let(:findings) do
+      described_class.new(rules: [:malformed_label_statement])
+                     .lint_file(lint_fixture("malformed_label_statement"))
+    end
+
+    it "flags `label IDENT 'string';` where the `=` between the variable and the label string was dropped" do
+      expect(findings.length).to eq(1)
+      expect(findings[0].rule).to eq(:malformed_label_statement)
+      expect(findings[0].line).to eq(6)
+      expect(findings[0].column).to eq(7)
+      expect(findings[0].message).to include("missing the `=`")
+      expect(findings[0].message).to include("aHSDELIRIUM")
+    end
+
+    it "produces no findings on the well-formed `label X = 'Y';` shape" do
+      clean = described_class.new(rules: [:malformed_label_statement])
+                             .lint_file(clean_fixture("malformed_label_statement"))
+      expect(clean).to be_empty
+    end
+
+    it "autofix inserts the missing `=` and leaves any already-correct pairs in the same statement alone" do
+      Tempfile.create(["mls_fix", ".sas"]) do |f|
+        f.write(File.read(File.join(lints_path, "malformed_label_statement", "autofix.sas")))
+        f.flush
+        rule = SasLinter::Rules::MalformedLabelStatement.new(autofix: true)
+        described_class.new(rules: [rule]).lint_file(f.path)
+
+        out = File.read(f.path)
+        expect(out).to include("label aHSDELIRIUM = 'Delirium Screener';")
+        expect(out).to include("label ctHSDELIRIUM = 'Delirium Treatment CAP' aOTHER = 'Other';")
       end
     end
   end
